@@ -1,9 +1,15 @@
-use std::{error, fmt};
+use std::{error::Error, fmt::{Debug, Display, Formatter, Result as FmtResult}};
 
 #[derive(Debug)]
 pub struct BadCheckSumError {
     file_sources: Vec<(String, String)>,
 }
+impl Display for BadCheckSumError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Debug::fmt(self, f)
+    }
+}
+impl Error for BadCheckSumError {}
 
 impl From<Vec<(String, String)>> for BadCheckSumError {
     fn from(file_sources: Vec<(String, String)>) -> Self {
@@ -11,30 +17,24 @@ impl From<Vec<(String, String)>> for BadCheckSumError {
     }
 }
 
-impl fmt::Display for BadCheckSumError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(self, f)
-    }
-}
-
-impl error::Error for BadCheckSumError {}
-
 #[derive(Clone)]
 pub struct ThreadSafeError {
     pub message: String,
 }
-
-impl fmt::Debug for ThreadSafeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ThreadSafeError")
+impl Display for ThreadSafeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("ThreadSafeError")
+            .field(&self.message)
+            .finish()
+    }
+}
+impl Debug for ThreadSafeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(&self, f)
     }
 }
 
-impl fmt::Display for ThreadSafeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self, f)
-    }
-}
+impl Error for ThreadSafeError {}
 
 impl<T: Into<String>> From<T> for ThreadSafeError {
     fn from(f: T) -> Self {
@@ -42,14 +42,19 @@ impl<T: Into<String>> From<T> for ThreadSafeError {
     }
 }
 
-impl error::Error for ThreadSafeError {}
-
 #[derive(Debug)]
 pub enum CurlError {
     CurlError(curl::Error),
     CurlMultiError(curl::MultiError),
     ThreadSafeError(ThreadSafeError)
 }
+impl Display for CurlError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Debug::fmt(&self, f)
+    }
+}
+
+impl Error for CurlError {}
 
 impl From<curl::Error> for CurlError {
     fn from(error: curl::Error) -> Self {
@@ -77,6 +82,13 @@ pub enum DlError {
     BadCheckSumError(BadCheckSumError),
     CurlError(CurlError)
 }
+impl Display for DlError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Debug::fmt(self, f)
+    }    
+}
+impl Error for DlError {}
+
 impl From<BadCheckSumError> for DlError {
     fn from(error: BadCheckSumError) -> Self {
         Self::BadCheckSumError(error)
@@ -103,6 +115,12 @@ pub enum ThreadSafeDlError {
     BadCheckSumError(BadCheckSumError),
     ThreadSafeError(ThreadSafeError),
 }
+impl Display for ThreadSafeDlError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Debug::fmt(&self, f)
+    }
+}
+impl Error for ThreadSafeDlError {}
 
 impl From<BadCheckSumError> for ThreadSafeDlError {
     fn from(error: BadCheckSumError) -> Self {
