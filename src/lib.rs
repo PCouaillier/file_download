@@ -42,12 +42,14 @@ impl BinaryRepr {
         }
         s
     }
+}
 
-    pub fn to_string(&self) -> String {
-        match self.format {
+impl std::fmt::Display for BinaryRepr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_> ) -> std::fmt::Result {
+        f.write_str(&match self.format {
             BinaryReprFormat::Hex => self.to_hex(),
             BinaryReprFormat::Base64 => self.to_base64(),
-        }
+        })
     }
 }
 
@@ -163,10 +165,6 @@ impl DownloadFolder {
     pub fn iter(&self) -> impl Iterator<Item = &FileToDl> {
         self.files.iter()
     }
-
-    pub fn into_iter(&self) -> impl Iterator<Item = FileToDl> {
-        self.files.clone().into_iter()
-    }
 }
 
 fn download_file_http11(file: FileToDl) -> Result<Easy2<FileCollector>, curl::Error> {
@@ -211,7 +209,7 @@ async fn check_file_checksum(file: &FileToDl) -> Result<(), (String, String)> {
 
 pub struct IterChunck<ITER, ITEM>
 where
-    ITER: Sized + std::iter::Iterator<Item = ITEM>,
+    ITER: Sized + Iterator<Item = ITEM>,
 {
     iter: ITER,
     size: usize,
@@ -219,7 +217,7 @@ where
 
 impl<ITER, ITEM> IterChunck<ITER, ITEM>
 where
-    ITER: Sized + std::iter::Iterator<Item = ITEM>,
+    ITER: Sized + Iterator<Item = ITEM>,
 {
     /// Create a new Batching iterator.
     pub fn new(iter: ITER, size: usize) -> IterChunck<ITER, ITEM> {
@@ -294,10 +292,6 @@ impl DownloadBuilder {
         self.folders.iter().map(|f| f.iter()).flatten()
     }
 
-    pub fn into_iter(&self) -> impl Iterator<Item = FileToDl> {
-        self.folders.clone().into_iter().map(|f| f.into_iter()).flatten()
-    }
-
     async fn check_hashes(&self) -> Result<(), BadCheckSumError> {
         let errors = futures::future::join_all(self.iter().map(check_file_checksum))
             .await
@@ -313,7 +307,7 @@ impl DownloadBuilder {
     }
 
     pub async fn download_http2(&self) -> Result<(), DlError> {
-        for chunk_files in IterChunck::new(self.into_iter(), 16) {
+        for chunk_files in IterChunck::new(self.iter().cloned(), 16) {
             // dl_tokens must be droped after Multi::perform
             let multi = curl::multi::Multi::new();
             let mut dl_tokens = Vec::with_capacity(chunk_files.len());
@@ -337,13 +331,13 @@ impl DownloadBuilder {
     pub async fn download_http11(&self) -> Result<(), DlError> {
         use futures::future::try_join_all;
 
-        try_join_all(self.into_iter().map(|file| async move {
+        try_join_all(self.iter().cloned().map(|file| async move {
             (DlHttp1Future::new(move ||download_file_http11(file).map_err(CurlError::from))).await
                 .map_err(CurlError::from)
         }))
         .await?;
 
-        &self.check_hashes().await?;
+        self.check_hashes().await?;
         Ok(())
     }
 }
