@@ -1,4 +1,9 @@
-use std::{error::Error, fmt::{Debug, Display, Formatter, Result as FmtResult}};
+use crate::BinaryReprFormat;
+use std::{
+    error::Error,
+    ffi::OsString,
+    fmt::{Debug, Display, Formatter, Result as FmtResult},
+};
 
 #[derive(Debug)]
 pub struct BadCheckSumError {
@@ -46,7 +51,7 @@ impl<T: Into<String>> From<T> for ThreadSafeError {
 pub enum CurlError {
     CurlError(curl::Error),
     CurlMultiError(curl::MultiError),
-    ThreadSafeError(ThreadSafeError)
+    ThreadSafeError(ThreadSafeError),
 }
 impl Display for CurlError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -73,19 +78,21 @@ impl From<ThreadSafeError> for CurlError {
 }
 impl Into<ThreadSafeError> for CurlError {
     fn into(self) -> ThreadSafeError {
-        ThreadSafeError { message: format!("{:?}", self) }
+        ThreadSafeError {
+            message: format!("{:?}", self),
+        }
     }
 }
 
 #[derive(Debug)]
 pub enum DlError {
     BadCheckSumError(BadCheckSumError),
-    CurlError(CurlError)
+    CurlError(CurlError),
 }
 impl Display for DlError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         Debug::fmt(self, f)
-    }    
+    }
 }
 impl Error for DlError {}
 
@@ -130,5 +137,26 @@ impl From<BadCheckSumError> for ThreadSafeDlError {
 impl From<ThreadSafeError> for ThreadSafeDlError {
     fn from(error: ThreadSafeError) -> Self {
         Self::ThreadSafeError(error)
+    }
+}
+
+#[derive(Debug)]
+pub struct BinaryReprError {
+    format: BinaryReprFormat,
+    value: OsString,
+}
+impl std::fmt::Display for BinaryReprError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+impl Error for BinaryReprError {}
+
+impl BinaryReprError {
+    pub fn new<T: Into<OsString>>(value: T, format: BinaryReprFormat) -> Self {
+        Self {
+            format,
+            value: value.into(),
+        }
     }
 }

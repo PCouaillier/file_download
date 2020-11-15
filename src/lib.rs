@@ -1,54 +1,128 @@
-pub mod error;
+mod binary_repr_format;
 pub mod curl_async;
+pub mod error;
 
-use crate::error::*;
 use crate::curl_async::{DlHttp1Future, DlHttp2Future};
+use crate::error::*;
+use async_std::path::PathBuf;
+pub use binary_repr_format::BinaryReprFormat;
 use curl::easy::{Easy2, Handler, HttpVersion};
 use std::{borrow::Cow, io::Write};
-use async_std::path::PathBuf;
 
-#[derive(PartialEq, Debug, Clone)]
-pub enum BinaryReprFormat {
-    Hex,
-    Base64,
+fn from_bin(chars: &str) -> Result<Vec<u8>, BinaryReprError> {
+    let mut res = Vec::with_capacity(chars.len() / 8 + if chars.len() % 8 == 0 { 0 } else { 1 });
+    for chunk_c in IterChunck::new(chars.as_bytes().iter().rev(), 8) {
+        let mut chunk_val = 0u8;
+        let chunk_len = chunk_c.len();
+        for i in 0..chunk_len {
+            if let Some(v) = chunk_c.get(i) {
+                if **v == b'1' {
+                    chunk_val += 1 << i;
+                } else if **v != b'0' {
+                    return Err(BinaryReprError::new(&chars, BinaryReprFormat::Bin));
+                }
+            }
+        }
+        res.push(chunk_val);
+    }
+    res.reverse();
+    Ok(res)
+}
+
+mod test {
+    #[test]
+    fn test_from_bin() {
+        assert_eq!(super::from_bin("1").unwrap(), Vec::from([1]));
+        assert_eq!(
+            super::from_bin("0000000111111111").unwrap(),
+            Vec::from([1, 255])
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct BinaryRepr {
-    value: Vec<u8>, 
+    value: Vec<u8>,
     format: BinaryReprFormat,
 }
+
 impl BinaryRepr {
-    pub fn new<T: Into<Vec<u8>>>(value: T, format: BinaryReprFormat) -> Self {
-        Self {
-            value: value.into(),
-            format
+    /// ```
+    /// use file_download::{BinaryRepr, BinaryReprFormat};
+    /// let b = BinaryRepr::new("01FF", BinaryReprFormat::Hex).unwrap();
+    /// assert_eq!(b, BinaryRepr::new("Af8=", BinaryReprFormat::Base64).unwrap());
+    /// assert_eq!(true, BinaryRepr::new("1F", BinaryReprFormat::Base64).is_err());
+    /// assert_eq!(true, BinaryRepr::new("G", BinaryReprFormat::Hex).is_err());
+    /// assert_eq!(Vec::from([1u8,255u8]), BinaryRepr::new("0000000111111111", BinaryReprFormat::Bin).unwrap().decode());
+    /// ```
+    pub fn new(value: &str, format: BinaryReprFormat) -> Result<Self, BinaryReprError> {
+        match &format {
+            BinaryReprFormat::Base64 => base64::decode(&value)
+                .map_err(|_| BinaryReprError::new(&value, BinaryReprFormat::Base64)),
+            BinaryReprFormat::Hex => {
+                hex::decode(value).map_err(|_| BinaryReprError::new(&value, BinaryReprFormat::Hex))
+            }
+            BinaryReprFormat::Bin => {
+                from_bin(value).map_err(|_| BinaryReprError::new(&value, BinaryReprFormat::Bin))
+            }
         }
+        .map(|value| Self { value, format })
     }
+
+    /// ```
+    /// use file_download::{BinaryRepr, BinaryReprFormat};
+    /// let v = [1u8, 255u8];
+    /// let b = BinaryRepr::new("01FF", BinaryReprFormat::Hex).unwrap();
+    /// assert_eq!(b.decode(), &v);
+    /// let b = BinaryRepr::new("Af8=", BinaryReprFormat::Base64).unwrap();
+    /// assert_eq!(b.decode(), &v);
+    /// ```
     pub fn decode(&self) -> Vec<u8> {
         self.value.clone()
     }
 
+    /// ```
+    /// use file_download::{BinaryRepr, BinaryReprFormat};
+    /// let v = "Af8=";
+    /// let b = BinaryRepr::new(v, BinaryReprFormat::Base64).unwrap();
+    /// assert_eq!(b.to_base64(), v);
+    /// ```
     pub fn to_base64(&self) -> String {
         base64::encode(self.value.as_slice())
     }
 
+    /// ```
+    /// use file_download::{BinaryRepr, BinaryReprFormat};
+    /// let v = "1f";
+    /// let b = BinaryRepr::new(v, BinaryReprFormat::Hex).unwrap();
+    /// assert_eq!(b.to_hex(), v);
+    /// ```
     pub fn to_hex(&self) -> String {
+        hex::encode(&self.value)
+    }
+
+    /// ```
+    /// use file_download::{BinaryRepr, BinaryReprFormat};
+    /// let b = BinaryRepr::new("1F", BinaryReprFormat::Hex).unwrap();
+    /// assert_eq!(b.to_bin(), "00011111");
+    /// ```
+    pub fn to_bin(&self) -> String {
         let mut s = String::with_capacity(self.value.len() * 8);
         for n in self.value.iter() {
             for i in 0..8u8 {
-                s.push(if 0 < n & (1u8 << i) { '1' } else { '0' });
+                s.push(if 0 < (n & (1u8 << i)) { '1' } else { '0' });
             }
         }
-        s
+        s.chars().rev().collect()
     }
 }
 
 impl std::fmt::Display for BinaryRepr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_> ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&match self.format {
             BinaryReprFormat::Hex => self.to_hex(),
             BinaryReprFormat::Base64 => self.to_base64(),
+            BinaryReprFormat::Bin => format!("{:?}", &self.value),
         })
     }
 }
@@ -67,7 +141,10 @@ pub struct FileCollector {
 
 impl<P: Into<PathBuf>> From<P> for FileCollector {
     fn from(path: P) -> Self {
-        Self { path: path.into(), file: None }
+        Self {
+            path: path.into(),
+            file: None,
+        }
     }
 }
 
@@ -89,7 +166,7 @@ impl<'p> From<FileCollector> for Easy2<FileCollector> {
     fn from(c: FileCollector) -> Self {
         Self::new(c)
     }
-}   
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CheckSum {
@@ -234,8 +311,7 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let mut v = Vec::with_capacity(self.size);
-        let mut i = 0usize;
-        while i < self.size {
+        for i in 0..self.size {
             if let Some(e) = self.iter.next() {
                 v.push(e);
             } else if i == 0 {
@@ -243,7 +319,6 @@ where
             } else {
                 break;
             }
-            i += 1;
         }
         Some(v)
     }
@@ -332,7 +407,8 @@ impl DownloadBuilder {
         use futures::future::try_join_all;
 
         try_join_all(self.iter().cloned().map(|file| async move {
-            (DlHttp1Future::new(move ||download_file_http11(file).map_err(CurlError::from))).await
+            (DlHttp1Future::new(move || download_file_http11(file).map_err(CurlError::from)))
+                .await
                 .map_err(CurlError::from)
         }))
         .await?;
@@ -341,8 +417,6 @@ impl DownloadBuilder {
         Ok(())
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

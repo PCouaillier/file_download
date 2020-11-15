@@ -15,6 +15,7 @@ tokio02 = ["async-std/tokio02"]
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["async-await", "std"] }
 base64 = ">=0.12"
+hex = "0.4.2"
 md5 = "~0.7"
 chrono = ">=0.4"
 curl = { version = "~0.4", features = ["http2"] }

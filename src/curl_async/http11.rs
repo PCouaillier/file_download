@@ -3,8 +3,8 @@ use curl::easy::{Easy2, Handler};
 use std::{
     future::Future,
     pin::Pin,
-    task::{Context, Poll},
     sync::{Arc, Mutex},
+    task::{Context, Poll},
 };
 
 enum DlHttp1FutureState<H: Handler> {
@@ -20,22 +20,18 @@ pub struct DlHttp1Future<T: Handler> {
 }
 
 impl<H: Handler + Send + 'static> DlHttp1Future<H> {
-    pub fn new<F: Send + 'static + FnOnce()->Result<Easy2<H>,CurlError>>(f: F) -> Self {
+    pub fn new<F: Send + 'static + FnOnce() -> Result<Easy2<H>, CurlError>>(f: F) -> Self {
         let mutex = Arc::new(Mutex::new(DlHttp1FutureState::NotStarted));
         let state = mutex.clone();
-        *(mutex.lock().unwrap()) = DlHttp1FutureState::Pending(
-            std::thread::spawn(move || {
-                *(state.lock().unwrap()) = match 
-                    f()
-                    .and_then(|easy| match easy.perform() {
-                            Ok(_) => Ok(Some(easy)),
-                            Err(e) => Err(e.into()),
-                    }) {
-                        Ok(ok) => DlHttp1FutureState::Done(ok),
-                        Err(_) => DlHttp1FutureState::Error(ThreadSafeError::from("curl error occured")),
-                };
-            })
-        );
+        *(mutex.lock().unwrap()) = DlHttp1FutureState::Pending(std::thread::spawn(move || {
+            *(state.lock().unwrap()) = match f().and_then(|easy| match easy.perform() {
+                Ok(_) => Ok(Some(easy)),
+                Err(e) => Err(e.into()),
+            }) {
+                Ok(ok) => DlHttp1FutureState::Done(ok),
+                Err(_) => DlHttp1FutureState::Error(ThreadSafeError::from("curl error occured")),
+            };
+        }));
         Self {
             state: mutex,
             waker: None,
@@ -57,22 +53,26 @@ impl<T: Handler> Future for DlHttp1Future<T> {
             Err(poisoned) => poisoned.into_inner(),
         };
         match &mut (*state) {
-            DlHttp1FutureState::Pending(_) =>  {
+            DlHttp1FutureState::Pending(_) => {
                 let cx2 = cx.waker().clone();
                 fu.waker = Some(thread::spawn(move || {
                     let _ = thread::sleep(Duration::from_secs(1));
                     cx2.wake();
                 }));
                 Poll::Pending
-            },
+            }
             DlHttp1FutureState::Done(ok) if ok.is_some() => {
                 let mut ret = None;
                 std::mem::swap(ok, &mut ret);
                 Poll::Ready(Ok(ret.unwrap()))
-            },
-            DlHttp1FutureState::Done(_) => Poll::Ready(Err(ThreadSafeError::from("value is gone").into())),
-            DlHttp1FutureState::NotStarted => Poll::Ready(Err(ThreadSafeError::from("NotStarted").into())),
-            DlHttp1FutureState::Error(err) => Poll::Ready(Err(err.clone().into()))
+            }
+            DlHttp1FutureState::Done(_) => {
+                Poll::Ready(Err(ThreadSafeError::from("value is gone").into()))
+            }
+            DlHttp1FutureState::NotStarted => {
+                Poll::Ready(Err(ThreadSafeError::from("NotStarted").into()))
+            }
+            DlHttp1FutureState::Error(err) => Poll::Ready(Err(err.clone().into())),
         }
     }
 }

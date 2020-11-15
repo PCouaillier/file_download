@@ -21,7 +21,7 @@ pub struct DlHttp2Future<'files, T: Handler> {
     files: &'files [Easy2Handle<T>],
     multi: Option<curl::multi::Multi>,
     state: DlHttp2FutureState,
-    join: Option<std::thread::JoinHandle<()>>
+    join: Option<std::thread::JoinHandle<()>>,
 }
 impl<'files, T: Handler> std::fmt::Debug for DlHttp2Future<'files, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -101,7 +101,7 @@ impl<'files, T: Handler> Future for DlHttp2Future<'files, T> {
                     ct.wake();
                 }));
                 Poll::Pending
-            },
+            }
         }
     }
 }
