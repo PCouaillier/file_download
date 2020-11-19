@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 pub mod curl_async;
 pub mod error;
-mod handler;
+pub mod handler;
 pub mod hash;
 pub mod iter_chunck;
 
