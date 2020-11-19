@@ -6,9 +6,10 @@ use curl::{
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
 };
+use super::unlock;
 
 #[derive(Debug)]
 enum DlHttp2FutureState {
@@ -17,40 +18,20 @@ enum DlHttp2FutureState {
     Error(Arc<CurlError>),
 }
 
-pub struct DlHttp2Future<'files, T: Handler> {
-    files: &'files [Easy2Handle<T>],
-    multi: Option<curl::multi::Multi>,
-    state: DlHttp2FutureState,
-    join: Option<std::thread::JoinHandle<()>>,
-}
-impl<'files, T: Handler> std::fmt::Debug for DlHttp2Future<'files, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DlHttp2Future")
-            .field("dbg_files_len", &self.files.len())
-            .field("state", &self.state)
-            .finish()
-    }
+/// Internal of http2 this is used to lock the
+/// wole 
+/// 
+/// 
+struct DlHttp2FutureInner<'files, T: Handler> {
+    pub files: &'files [Easy2Handle<T>],
+    pub multi: Option<curl::multi::Multi>,
+    pub state: DlHttp2FutureState,
+    pub join: Option<std::thread::JoinHandle<()>>,
 }
 
-impl<'files, T: Handler> DlHttp2Future<'files, T> {
-    pub fn new(files: &'files [Easy2Handle<T>], multi: Multi) -> Self {
-        if files.is_empty() {
-            drop(multi);
-            return Self {
-                files,
-                multi: None,
-                state: DlHttp2FutureState::Done,
-                join: None,
-            };
-        }
+type FutureResult = Result<(), Arc<CurlError>>;
 
-        Self {
-            state: DlHttp2FutureState::Pending,
-            files,
-            multi: Some(multi),
-            join: None,
-        }
-    }
+impl<'files, T: Handler> DlHttp2FutureInner<'files, T> {
 
     fn poll_multi(&mut self) {
         if let DlHttp2FutureState::Pending = self.state {
@@ -80,28 +61,72 @@ impl<'files, T: Handler> DlHttp2Future<'files, T> {
             }
         }
     }
-}
 
-impl<'files, T: Handler> Future for DlHttp2Future<'files, T> {
-    type Output = Result<(), Arc<CurlError>>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let fu: &mut Self = unsafe { self.get_unchecked_mut() };
-
-        if let DlHttp2FutureState::Pending = &fu.state {
-            fu.poll_multi();
+    fn poll(&mut self, cx: &mut Context) -> Poll<FutureResult> {
+        if let DlHttp2FutureState::Pending = self.state {
+            self.poll_multi();
         }
-        match &fu.state {
+        match &self.state {
             DlHttp2FutureState::Done => Poll::Ready(Ok(())),
             DlHttp2FutureState::Error(error) => Poll::Ready(Err(error.clone())),
             _ => {
                 let ct = cx.waker().clone();
-                fu.join = Some(std::thread::spawn(move || {
+                self.join = Some(std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(10));
                     ct.wake();
                 }));
                 Poll::Pending
             }
         }
+    }
+}
+
+pub struct DlHttp2Future<'files, T: Handler> {
+    inner: Mutex<DlHttp2FutureInner<'files, T>>
+}
+
+impl<'files, T: Handler> std::fmt::Debug for DlHttp2Future<'files, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let inner = match self.inner.lock() {
+            Ok(a) => a,
+            Err(p) => p.into_inner(),
+        };
+        f.debug_struct("DlHttp2Future")
+            .field("dbg_files_len", &inner.files.len())
+            .field("state", &inner.state)
+            .finish()
+    }
+}
+
+impl<'files, T: Handler> DlHttp2Future<'files, T> {
+    pub fn new(files: &'files [Easy2Handle<T>], multi: Multi) -> Self {
+        if files.is_empty() {
+            drop(multi);
+            return Self {
+                inner: Mutex::new(DlHttp2FutureInner {
+                    files,
+                    multi: None,
+                    state: DlHttp2FutureState::Done,
+                    join: None,
+                })
+            };
+        }
+
+        Self {
+            inner: Mutex::new(DlHttp2FutureInner {
+                state: DlHttp2FutureState::Pending,
+                files,
+                multi: Some(multi),
+                join: None,
+            })
+        }
+    }
+}
+
+impl<'files, T: Handler> Future for DlHttp2Future<'files, T> {
+    type Output = FutureResult;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        unlock(&self.inner).poll(cx)
     }
 }

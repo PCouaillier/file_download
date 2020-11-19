@@ -1,0 +1,32 @@
+use curl::easy::{Easy2, Handler};
+use std::borrow::Cow;
+
+pub struct BinaryCollector(Vec<u8>);
+impl Default for BinaryCollector {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+impl<'a> std::convert::From<&'a BinaryCollector> for Cow<'a, str> {
+    fn from(value: &BinaryCollector) -> Cow<str> {
+        String::from_utf8_lossy(&value.0)
+    }
+}
+impl Handler for BinaryCollector {
+    fn write(&mut self, data: &[u8]) -> Result<usize, curl::easy::WriteError> {
+        self.0.extend_from_slice(data);
+        Ok(data.len())
+    }
+}
+
+impl From<BinaryCollector> for Easy2<BinaryCollector> {
+    fn from(c: BinaryCollector) -> Self {
+        Self::new(c)
+    }
+}
+
+impl AsRef<[u8]> for BinaryCollector {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
