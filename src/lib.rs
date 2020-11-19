@@ -1,14 +1,14 @@
 #![forbid(unsafe_code)]
-pub mod hash;
 pub mod curl_async;
 pub mod error;
 mod handler;
+pub mod hash;
 pub mod iter_chunck;
 
-use crate::hash::{BinaryRepr, BinaryReprFormat};
 use crate::curl_async::{DlHttp1Future, DlHttp2Future};
 use crate::error::*;
 use crate::handler::FileCollector;
+use crate::hash::{BinaryRepr, BinaryReprFormat};
 use async_std::path::PathBuf;
 use curl::easy::{Easy2, HttpVersion};
 use iter_chunck::*;
@@ -150,8 +150,7 @@ impl DownloadBuilder {
         }
     }
 
-
-    async fn download_files(chunk_files: Vec<FileToDl>) -> Result<(), DlError>{
+    async fn download_files(chunk_files: Vec<FileToDl>) -> Result<(), DlError> {
         // dl_tokens must be droped after Multi::perform
         let mut dl_tokens = Vec::with_capacity(chunk_files.len());
         let multi = curl::multi::Multi::new();
@@ -187,9 +186,7 @@ impl DownloadBuilder {
     pub async fn download_http11(&self, chunck_size: usize) -> Result<(), DlError> {
         use futures::future::try_join_all;
 
-
         for chunk_files in self.iter().cloned().by_chunck(chunck_size) {
-
             try_join_all(chunk_files.into_iter().map(|file| async move {
                 (DlHttp1Future::new(move || download_file_http11(file).map_err(CurlError::from)))
                     .await

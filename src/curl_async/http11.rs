@@ -1,3 +1,4 @@
+use super::unlock;
 use crate::error::*;
 use curl::easy::{Easy2, Handler};
 use std::{
@@ -6,7 +7,6 @@ use std::{
     sync::{Arc, Mutex},
     task::{Context, Poll},
 };
-use super::unlock;
 
 enum DlHttp1FutureState<H: Handler> {
     NotStarted,
@@ -19,8 +19,6 @@ pub struct DlHttp1Future<T: Handler> {
     state: Arc<Mutex<DlHttp1FutureState<T>>>,
     waker: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
-
-
 
 impl<H: Handler + Send + 'static> DlHttp1Future<H> {
     pub fn new<F: Send + 'static + FnOnce() -> Result<Easy2<H>, CurlError>>(f: F) -> Self {
@@ -55,7 +53,7 @@ impl<T: Handler> Future for DlHttp1Future<T> {
             Err(poisoned) => poisoned.into_inner(),
         };
         match &mut (*state) {
-            DlHttp1FutureState::Pending(_)|DlHttp1FutureState::NotStarted => {
+            DlHttp1FutureState::Pending(_) | DlHttp1FutureState::NotStarted => {
                 let cx2 = cx.waker().clone();
                 *(self.waker.lock().expect("locking waker")) = Some(thread::spawn(move || {
                     let _ = thread::sleep(Duration::from_secs(1));

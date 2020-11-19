@@ -1,3 +1,4 @@
+use super::unlock;
 use crate::error::*;
 use curl::{
     easy::Handler,
@@ -9,7 +10,6 @@ use std::{
     sync::{Arc, Mutex},
     task::{Context, Poll},
 };
-use super::unlock;
 
 #[derive(Debug)]
 enum DlHttp2FutureState {
@@ -19,9 +19,9 @@ enum DlHttp2FutureState {
 }
 
 /// Internal of http2 this is used to lock the
-/// wole 
-/// 
-/// 
+/// wole
+///
+///
 struct DlHttp2FutureInner<'files, T: Handler> {
     pub files: &'files [Easy2Handle<T>],
     pub multi: Option<curl::multi::Multi>,
@@ -32,7 +32,6 @@ struct DlHttp2FutureInner<'files, T: Handler> {
 type FutureResult = Result<(), Arc<CurlError>>;
 
 impl<'files, T: Handler> DlHttp2FutureInner<'files, T> {
-
     fn poll_multi(&mut self) {
         if let DlHttp2FutureState::Pending = self.state {
             if self.files.is_empty() {
@@ -82,7 +81,7 @@ impl<'files, T: Handler> DlHttp2FutureInner<'files, T> {
 }
 
 pub struct DlHttp2Future<'files, T: Handler> {
-    inner: Mutex<DlHttp2FutureInner<'files, T>>
+    inner: Mutex<DlHttp2FutureInner<'files, T>>,
 }
 
 impl<'files, T: Handler> std::fmt::Debug for DlHttp2Future<'files, T> {
@@ -108,7 +107,7 @@ impl<'files, T: Handler> DlHttp2Future<'files, T> {
                     multi: None,
                     state: DlHttp2FutureState::Done,
                     join: None,
-                })
+                }),
             };
         }
 
@@ -118,7 +117,7 @@ impl<'files, T: Handler> DlHttp2Future<'files, T> {
                 files,
                 multi: Some(multi),
                 join: None,
-            })
+            }),
         }
     }
 }

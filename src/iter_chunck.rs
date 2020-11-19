@@ -24,8 +24,6 @@ where
     }
 }
 
-
-
 impl<ITER> Iterator for IterChunck<ITER>
 where
     ITER: Sized + std::iter::Iterator,
@@ -94,7 +92,7 @@ mod test {
 
     #[test]
     fn test_size_hint() {
-        let i = [1,2,3,4,5].iter().by_chunck(2);
+        let i = [1, 2, 3, 4, 5].iter().by_chunck(2);
         assert_eq!((3, Some(3)), i.size_hint());
 
         let i = [1].iter().by_chunck(2);
@@ -102,7 +100,6 @@ mod test {
 
         let i = (0..).by_chunck(2);
         assert_eq!((usize::MAX, None), i.size_hint());
-
 
         let i = (0..10).filter(|x| x % 2 == 0).by_chunck(3);
         assert_eq!((0, Some(4)), i.size_hint());
