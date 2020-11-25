@@ -86,10 +86,7 @@ pub struct DlHttp2Future<'files, T: Handler> {
 
 impl<'files, T: Handler> std::fmt::Debug for DlHttp2Future<'files, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let inner = match self.inner.lock() {
-            Ok(a) => a,
-            Err(p) => p.into_inner(),
-        };
+        let inner = unlock(&self.inner);
         f.debug_struct("DlHttp2Future")
             .field("dbg_files_len", &inner.files.len())
             .field("state", &inner.state)

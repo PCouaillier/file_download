@@ -48,14 +48,11 @@ impl<T: Handler> Future for DlHttp1Future<T> {
         use std::thread;
         use std::time::Duration;
 
-        let mut state = match self.state.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut state = unlock(&self.state);
         match &mut (*state) {
             DlHttp1FutureState::Pending(_) | DlHttp1FutureState::NotStarted => {
                 let cx2 = cx.waker().clone();
-                *(self.waker.lock().expect("locking waker")) = Some(thread::spawn(move || {
+                *(unlock(&self.waker)) = Some(thread::spawn(move || {
                     let _ = thread::sleep(Duration::from_secs(1));
                     cx2.wake();
                 }));
