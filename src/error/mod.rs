@@ -76,7 +76,7 @@ impl From<ThreadSafeError> for CurlError {
         Self::ThreadSafeError(error)
     }
 }
-impl From<CurlError> for ThreadSafeError  {
+impl From<CurlError> for ThreadSafeError {
     fn from(error: CurlError) -> Self {
         Self {
             message: format!("{:?}", error),
