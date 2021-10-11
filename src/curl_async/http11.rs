@@ -35,7 +35,7 @@ impl<H: Handler + Send + 'static> DlHttp1Future<H> {
             *(unlock(&thread_state)) = result;
         }));
         Self {
-            state: state,
+            state,
             waker: Mutex::new(None),
         }
     }

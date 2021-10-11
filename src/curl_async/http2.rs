@@ -71,7 +71,9 @@ impl<'files, T: Handler> DlHttp2FutureInner<'files, T> {
             self.poll_multi();
         }
         match &self.state {
-            DlHttp2FutureState::Done(files) => Poll::Ready(Ok(files.clone())),
+            DlHttp2FutureState::Done(files) => Poll::Ready(Ok(
+                <&[Easy2Handle::<T>]>::clone(files))
+            ),
             DlHttp2FutureState::Error(error) => Poll::Ready(Err(error.clone())),
             _ => {
                 let ct = cx.waker().clone();
