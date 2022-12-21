@@ -7,7 +7,7 @@ use std::{
 
 #[derive(Debug)]
 pub struct BadCheckSumError {
-    file_sources: Vec<(String, String)>,
+    pub file_sources: Vec<(String, String)>,
 }
 impl Display for BadCheckSumError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -142,8 +142,8 @@ impl From<ThreadSafeError> for ThreadSafeDlError {
 
 #[derive(Debug)]
 pub struct BinaryReprError {
-    format: BinaryReprFormat,
-    value: OsString,
+    pub format: BinaryReprFormat,
+    pub value: OsString,
 }
 impl std::fmt::Display for BinaryReprError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

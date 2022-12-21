@@ -1,6 +1,6 @@
 use super::BinaryReprFormat;
 use crate::error::*;
-use crate::IterChunck;
+use crate::IterChunk;
 
 #[derive(Debug, Clone)]
 pub struct BinaryRepr {
@@ -97,7 +97,7 @@ impl PartialEq<Self> for BinaryRepr {
 
 fn from_bin(chars: &str) -> Result<Vec<u8>, BinaryReprError> {
     let mut res = Vec::with_capacity(chars.len() / 8 + if chars.len() % 8 == 0 { 0 } else { 1 });
-    for chunk_c in IterChunck::new(chars.as_bytes().iter().rev(), 8) {
+    for chunk_c in IterChunk::new(chars.as_bytes().iter().rev(), 8) {
         let mut chunk_val = 0u8;
         let chunk_len = chunk_c.len();
         for i in 0..chunk_len {

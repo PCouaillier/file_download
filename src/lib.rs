@@ -3,15 +3,20 @@ pub mod curl_async;
 pub mod error;
 pub mod handler;
 pub mod hash;
-pub mod iter_chunck;
+pub mod iter_chunk;
 
 use crate::curl_async::{DlHttp1Future, DlHttp2Future};
 use crate::error::*;
 use crate::handler::FileCollector;
 use crate::hash::{BinaryRepr, BinaryReprFormat};
-use async_std::path::PathBuf;
+#[cfg(feature = "async-std")]
+use async_std::{fs, path::{Path,PathBuf}};
+#[cfg(all(not(feature = "async-std"), feature = "tokio"))]
+use std::path::{Path,PathBuf};
+#[cfg(all(not(feature = "async-std"), feature = "tokio"))]
+use tokio::fs;
 use curl::easy::{Easy2, HttpVersion};
-use iter_chunck::*;
+use iter_chunk::*;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CheckSum {
@@ -24,6 +29,13 @@ pub struct FileToDl {
     pub target: PathBuf,
     pub source: String,
     pub check_sum: CheckSum,
+}
+
+async fn file_exists(path: &Path) -> bool {
+    #[cfg(feature = "async-std")]
+    return path.exists().await;
+    #[cfg(all(not(feature = "async-std"), feature = "tokio"))]
+    return fs::metadata(path).await.is_ok()
 }
 
 #[derive(Clone)]
@@ -49,7 +61,7 @@ impl DownloadFolder {
                 .or_else(|_| f.target.strip_prefix("/"))
                 .unwrap_or(&f.target),
         );
-        if !self.if_not_exists || !f.target.exists().await {
+        if !self.if_not_exists || !file_exists(&f.target).await {
             self.files.push(f);
         }
     }
@@ -80,10 +92,8 @@ fn download_file_http2(file: FileToDl) -> Result<Easy2<FileCollector>, curl::Err
 }
 
 async fn check_file_checksum(file: &FileToDl) -> Result<(), (String, String)> {
-    use async_std::fs;
-
     let target = PathBuf::from(file.target.as_os_str());
-    if !target.exists().await || file.check_sum == CheckSum::None {
+    if !file_exists(&target).await || file.check_sum == CheckSum::None {
         return Ok(());
     }
     let f_md5 = match &file.check_sum {
@@ -175,18 +185,18 @@ impl DownloadBuilder {
         Ok(())
     }
 
-    pub async fn download_http2_by_chunck(&self, chunck_size: usize) -> Result<(), DlError> {
-        for chunk_files in self.iter().cloned().by_chunck(chunck_size) {
+    pub async fn download_http2_by_chunk(&self, chunk_size: usize) -> Result<(), DlError> {
+        for chunk_files in self.iter().cloned().by_chunk(chunk_size) {
             Self::download_files(chunk_files).await?;
         }
         self.check_hashes().await?;
         Ok(())
     }
 
-    pub async fn download_http11(&self, chunck_size: usize) -> Result<(), DlError> {
+    pub async fn download_http11(&self, chunk_size: usize) -> Result<(), DlError> {
         use futures::future::try_join_all;
 
-        for chunk_files in self.iter().cloned().by_chunck(chunck_size) {
+        for chunk_files in self.iter().cloned().by_chunk(chunk_size) {
             try_join_all(chunk_files.into_iter().map(|file| async move {
                 (DlHttp1Future::new(move || download_file_http11(file).map_err(CurlError::from)))
                     .await
