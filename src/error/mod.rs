@@ -1,9 +1,13 @@
 use crate::BinaryReprFormat;
+#[cfg(feature = "async-std")]
+use async_std::io;
 use std::{
     error::Error,
     ffi::OsString,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
 };
+#[cfg(all(not(feature = "async-std"), feature = "tokio"))]
+use tokio::io;
 
 #[derive(Debug)]
 pub struct BadCheckSumError {
@@ -88,6 +92,7 @@ impl From<CurlError> for ThreadSafeError {
 pub enum DlError {
     BadCheckSumError(BadCheckSumError),
     CurlError(CurlError),
+    IoError(io::Error),
 }
 impl Display for DlError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -114,6 +119,11 @@ impl From<curl::Error> for DlError {
 impl From<curl::MultiError> for DlError {
     fn from(error: curl::MultiError) -> Self {
         Self::CurlError(error.into())
+    }
+}
+impl From<io::Error> for DlError {
+    fn from(error: io::Error) -> Self {
+        Self::IoError(error)
     }
 }
 

@@ -7,7 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["async-std"]
+#default = ["async-std"]
+default = ["tokio"]
 curl-static = ["curl/static-curl", "curl/static-ssl"]
 tokio03 = ["async-std/tokio03"]
 tokio02 = ["async-std/tokio02"]

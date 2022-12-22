@@ -10,13 +10,17 @@ use crate::error::*;
 use crate::handler::FileCollector;
 use crate::hash::{BinaryRepr, BinaryReprFormat};
 #[cfg(feature = "async-std")]
-use async_std::{fs, path::{Path,PathBuf}};
-#[cfg(all(not(feature = "async-std"), feature = "tokio"))]
-use std::path::{Path,PathBuf};
-#[cfg(all(not(feature = "async-std"), feature = "tokio"))]
-use tokio::fs;
+use async_std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 use curl::easy::{Easy2, HttpVersion};
+use futures::future::{join_all, try_join_all};
 use iter_chunk::*;
+#[cfg(all(not(feature = "async-std"), feature = "tokio"))]
+use std::path::{Path, PathBuf};
+#[cfg(all(not(feature = "async-std"), feature = "tokio"))]
+use tokio::{fs, io};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CheckSum {
@@ -35,7 +39,137 @@ async fn file_exists(path: &Path) -> bool {
     #[cfg(feature = "async-std")]
     return path.exists().await;
     #[cfg(all(not(feature = "async-std"), feature = "tokio"))]
-    return fs::metadata(path).await.is_ok()
+    return fs::metadata(path).await.is_ok();
+}
+
+async fn download_files_http11_curl(chunk: Vec<FileToDl>) -> Result<(), DlError> {
+    try_join_all(chunk.into_iter().map(|file| async move {
+        (DlHttp1Future::new(move || download_file_http11(&file).map_err(CurlError::from)))
+            .await
+            .map_err(CurlError::from)
+    }))
+    .await?;
+    Ok(())
+}
+
+enum CheckHashAndRenameError {
+    IoError(io::Error),
+    HashError((String, String)),
+}
+
+async fn check_hash_and_rename(
+    files: (&FileToDl, &FileToDl),
+) -> Result<(), CheckHashAndRenameError> {
+    let (tmp_file, file) = files;
+    if let Err(err) = check_file_checksum(tmp_file).await {
+        Err(CheckHashAndRenameError::HashError(err))
+    } else {
+        fs::rename(&tmp_file.target, &file.target)
+            .await
+            .map_err(CheckHashAndRenameError::IoError)
+    }
+}
+
+async fn download_files_http2_curl(files: &Vec<FileToDl>) -> Result<(), DlError> {
+    let mut dl_tokens = Vec::with_capacity(files.len());
+    let multi = curl::multi::Multi::new();
+    for file in files.into_iter() {
+        dl_tokens.push(multi.add2(download_file_http2_curl(file)?)?);
+    }
+    if !dl_tokens.is_empty() {
+        DlHttp2Future::new(dl_tokens.as_slice(), multi)
+            .await
+            .map_err(|_| {
+                CurlError::from(ThreadSafeError {
+                    message: "http2 error".to_owned(),
+                })
+            })?;
+    }
+    Ok(())
+}
+
+fn download_file_http2_curl(file: &FileToDl) -> Result<Easy2<FileCollector>, curl::Error> {
+    let version = if file.source.starts_with("https:") {
+        HttpVersion::V2TLS
+    } else {
+        HttpVersion::V2
+    };
+    let mut easy = download_file_http11(&file)?;
+    easy.http_version(version)?;
+    Ok(easy)
+}
+
+async fn download_files_http11(files: &Vec<FileToDl>) -> Result<(), DlError> {
+    let tmp_files = generate_tmp_files(files.iter());
+
+    download_files_http11_curl(tmp_files.clone()).await?;
+    let results = join_all(
+        tmp_files
+            .iter()
+            .zip(files.iter())
+            .map(check_hash_and_rename),
+    )
+    .await;
+    let mut bad_check: Vec<(String, String)> = Vec::new();
+    for result in results
+        .into_iter()
+        .filter(Result::is_err)
+        .map(Result::unwrap_err)
+    {
+        match result {
+            CheckHashAndRenameError::IoError(err) => return Err(DlError::from(err)),
+            CheckHashAndRenameError::HashError(err) => bad_check.push(err),
+        }
+    }
+    if !bad_check.is_empty() {
+        return Err(DlError::from(BadCheckSumError::from(bad_check)));
+    }
+    Ok(())
+}
+
+fn generate_tmp_files<'a>(files: impl Iterator<Item = &'a FileToDl>) -> Vec<FileToDl> {
+    files
+        .map(|f| {
+            let mut tmp_target = f.target.clone();
+            let mut ext = tmp_target.extension().unwrap_or_default().to_owned();
+            ext.push(".tmp");
+            tmp_target.set_extension(ext);
+            FileToDl {
+                source: f.source.clone(),
+                target: tmp_target,
+                check_sum: f.check_sum.clone(),
+            }
+        })
+        .collect()
+}
+
+async fn download_files_http2(files: &Vec<FileToDl>) -> Result<(), DlError> {
+    let tmp_files = generate_tmp_files(files.iter());
+    download_files_http2_curl(&tmp_files).await?;
+    let results = join_all(
+        tmp_files
+            .iter()
+            .zip(files.iter())
+            .map(check_hash_and_rename),
+    )
+    .await;
+
+    let mut bad_check: Vec<(String, String)> = Vec::new();
+    for result in results
+        .into_iter()
+        .filter(Result::is_err)
+        .map(Result::unwrap_err)
+    {
+        match result {
+            CheckHashAndRenameError::IoError(err) => return Err(DlError::from(err)),
+            CheckHashAndRenameError::HashError(err) => bad_check.push(err),
+        }
+    }
+    if !bad_check.is_empty() {
+        return Err(DlError::from(BadCheckSumError::from(bad_check)));
+    }
+
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -71,23 +205,12 @@ impl DownloadFolder {
     }
 }
 
-fn download_file_http11(file: FileToDl) -> Result<Easy2<FileCollector>, curl::Error> {
-    let mut easy: Easy2<_> = FileCollector::from(file.target).into();
+fn download_file_http11(file: &FileToDl) -> Result<Easy2<FileCollector>, curl::Error> {
+    let mut easy: Easy2<_> = FileCollector::from(&file.target).into();
     easy.url(&file.source)?;
     easy.get(true)?;
     easy.max_redirections(3)?;
 
-    Ok(easy)
-}
-
-fn download_file_http2(file: FileToDl) -> Result<Easy2<FileCollector>, curl::Error> {
-    let version = if file.source.starts_with("https:") {
-        HttpVersion::V2TLS
-    } else {
-        HttpVersion::V2
-    };
-    let mut easy = download_file_http11(file)?;
-    easy.http_version(version)?;
     Ok(easy)
 }
 
@@ -146,66 +269,22 @@ impl DownloadBuilder {
         self.folders.iter().map(|f| f.iter()).flatten()
     }
 
-    async fn check_hashes(&self) -> Result<(), BadCheckSumError> {
-        let errors = futures::future::join_all(self.iter().map(check_file_checksum))
-            .await
-            .into_iter()
-            .filter_map(|e| if let Err(err) = e { Some(err) } else { None })
-            .collect::<Vec<_>>();
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors.into())
-        }
-    }
-
-    async fn download_files(chunk_files: Vec<FileToDl>) -> Result<(), DlError> {
-        // dl_tokens must be droped after Multi::perform
-        let mut dl_tokens = Vec::with_capacity(chunk_files.len());
-        let multi = curl::multi::Multi::new();
-        for file in chunk_files.into_iter() {
-            dl_tokens.push(multi.add2(download_file_http2(file)?)?);
-        }
-        if !dl_tokens.is_empty() {
-            DlHttp2Future::new(dl_tokens.as_slice(), multi)
-                .await
-                .map_err(|_| {
-                    CurlError::from(ThreadSafeError {
-                        message: "http2 error".to_owned(),
-                    })
-                })?;
-        }
-        Ok(())
-    }
-
     pub async fn download_http2(&self) -> Result<(), DlError> {
-        Self::download_files(self.iter().cloned().collect()).await?;
-        self.check_hashes().await?;
+        download_files_http2(&self.iter().cloned().collect()).await?;
         Ok(())
     }
 
     pub async fn download_http2_by_chunk(&self, chunk_size: usize) -> Result<(), DlError> {
         for chunk_files in self.iter().cloned().by_chunk(chunk_size) {
-            Self::download_files(chunk_files).await?;
+            download_files_http2(&chunk_files).await?;
         }
-        self.check_hashes().await?;
         Ok(())
     }
 
     pub async fn download_http11(&self, chunk_size: usize) -> Result<(), DlError> {
-        use futures::future::try_join_all;
-
         for chunk_files in self.iter().cloned().by_chunk(chunk_size) {
-            try_join_all(chunk_files.into_iter().map(|file| async move {
-                (DlHttp1Future::new(move || download_file_http11(file).map_err(CurlError::from)))
-                    .await
-                    .map_err(CurlError::from)
-            }))
-            .await?;
+            download_files_http11(&chunk_files).await?;
         }
-
-        self.check_hashes().await?;
         Ok(())
     }
 }
