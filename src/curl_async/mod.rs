@@ -6,7 +6,7 @@ pub use http2::DlHttp2Future;
 use std::sync::{Mutex, MutexGuard};
 
 #[inline(always)]
-fn unlock<'m, T>(mutex: &'m Mutex<T>) -> MutexGuard<'m, T> {
+fn unlock<T>(mutex: &Mutex<T>) -> MutexGuard<T> {
     match mutex.lock() {
         Ok(e) => e,
         Err(p) => p.into_inner(),

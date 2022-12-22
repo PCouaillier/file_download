@@ -1,6 +1,8 @@
 use crate::BinaryReprFormat;
 #[cfg(feature = "async-std")]
 use async_std::io;
+use base64::DecodeError;
+use hex::FromHexError;
 use std::{
     error::Error,
     ffi::OsString,
@@ -151,22 +153,51 @@ impl From<ThreadSafeError> for ThreadSafeDlError {
 }
 
 #[derive(Debug)]
+pub enum BinaryReprRootError {
+    FromHexError(FromHexError),
+    DecodeError(DecodeError),
+    None,
+}
+impl std::fmt::Display for BinaryReprRootError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+impl From<FromHexError> for BinaryReprRootError {
+    fn from(value: FromHexError) -> Self {
+        Self::FromHexError(value)
+    }
+}
+impl From<DecodeError> for BinaryReprRootError {
+    fn from(value: DecodeError) -> Self {
+        Self::DecodeError(value)
+    }
+}
+
+#[derive(Debug)]
 pub struct BinaryReprError {
     pub format: BinaryReprFormat,
     pub value: OsString,
+    pub err: BinaryReprRootError,
 }
 impl std::fmt::Display for BinaryReprError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(self, f)
     }
 }
+
 impl Error for BinaryReprError {}
 
 impl BinaryReprError {
-    pub fn new<T: Into<OsString>>(value: T, format: BinaryReprFormat) -> Self {
+    pub fn new<T: Into<OsString>>(
+        value: T,
+        format: BinaryReprFormat,
+        err: BinaryReprRootError,
+    ) -> Self {
         Self {
             format,
             value: value.into(),
+            err,
         }
     }
 }

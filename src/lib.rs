@@ -73,7 +73,7 @@ async fn check_hash_and_rename(
 async fn download_files_http2_curl(files: &Vec<FileToDl>) -> Result<(), DlError> {
     let mut dl_tokens = Vec::with_capacity(files.len());
     let multi = curl::multi::Multi::new();
-    for file in files.into_iter() {
+    for file in files.iter() {
         dl_tokens.push(multi.add2(download_file_http2_curl(file)?)?);
     }
     if !dl_tokens.is_empty() {
@@ -94,12 +94,12 @@ fn download_file_http2_curl(file: &FileToDl) -> Result<Easy2<FileCollector>, cur
     } else {
         HttpVersion::V2
     };
-    let mut easy = download_file_http11(&file)?;
+    let mut easy = download_file_http11(file)?;
     easy.http_version(version)?;
     Ok(easy)
 }
 
-async fn download_files_http11(files: &Vec<FileToDl>) -> Result<(), DlError> {
+async fn download_files_http11(files: &[FileToDl]) -> Result<(), DlError> {
     let tmp_files = generate_tmp_files(files.iter());
 
     download_files_http11_curl(tmp_files.clone()).await?;
@@ -143,7 +143,7 @@ fn generate_tmp_files<'a>(files: impl Iterator<Item = &'a FileToDl>) -> Vec<File
         .collect()
 }
 
-async fn download_files_http2(files: &Vec<FileToDl>) -> Result<(), DlError> {
+async fn download_files_http2(files: &[FileToDl]) -> Result<(), DlError> {
     let tmp_files = generate_tmp_files(files.iter());
     download_files_http2_curl(&tmp_files).await?;
     let results = join_all(
@@ -232,18 +232,10 @@ async fn check_file_checksum(file: &FileToDl) -> Result<(), (String, String)> {
     Ok(())
 }
 
+#[derive(Default)]
 pub struct DownloadBuilder {
     folders: Vec<DownloadFolder>,
     if_not_exists: bool,
-}
-
-impl Default for DownloadBuilder {
-    fn default() -> Self {
-        Self {
-            folders: Vec::default(),
-            if_not_exists: false,
-        }
-    }
 }
 
 impl DownloadBuilder {
@@ -266,11 +258,11 @@ impl DownloadBuilder {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &FileToDl> {
-        self.folders.iter().map(|f| f.iter()).flatten()
+        self.folders.iter().flat_map(|f| f.iter())
     }
 
     pub async fn download_http2(&self) -> Result<(), DlError> {
-        download_files_http2(&self.iter().cloned().collect()).await?;
+        download_files_http2(&self.iter().cloned().collect::<Vec<_>>()).await?;
         Ok(())
     }
 

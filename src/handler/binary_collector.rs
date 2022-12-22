@@ -1,12 +1,9 @@
 use curl::easy::{Easy2, Handler};
 use std::borrow::Cow;
 
+#[derive(Default)]
 pub struct BinaryCollector(Vec<u8>);
-impl Default for BinaryCollector {
-    fn default() -> Self {
-        Self(Vec::new())
-    }
-}
+
 impl<'a> std::convert::From<&'a BinaryCollector> for Cow<'a, str> {
     fn from(value: &BinaryCollector) -> Cow<str> {
         String::from_utf8_lossy(&value.0)

@@ -19,14 +19,11 @@ impl BinaryRepr {
     /// ```
     pub fn new(value: &str, format: BinaryReprFormat) -> Result<Self, BinaryReprError> {
         match &format {
-            BinaryReprFormat::Base64 => base64::decode(&value)
-                .map_err(|_| BinaryReprError::new(&value, BinaryReprFormat::Base64)),
-            BinaryReprFormat::Hex => {
-                hex::decode(value).map_err(|_| BinaryReprError::new(&value, BinaryReprFormat::Hex))
-            }
-            BinaryReprFormat::Bin => {
-                from_bin(value).map_err(|_| BinaryReprError::new(&value, BinaryReprFormat::Bin))
-            }
+            BinaryReprFormat::Base64 => base64::decode(value)
+                .map_err(|err| BinaryReprError::new(value, BinaryReprFormat::Base64, err.into())),
+            BinaryReprFormat::Hex => hex::decode(value)
+                .map_err(|err| BinaryReprError::new(value, BinaryReprFormat::Hex, err.into())),
+            BinaryReprFormat::Bin => from_bin(value),
         }
         .map(|value| Self { value, format })
     }
@@ -96,7 +93,7 @@ impl PartialEq<Self> for BinaryRepr {
 }
 
 fn from_bin(chars: &str) -> Result<Vec<u8>, BinaryReprError> {
-    let mut res = Vec::with_capacity(chars.len() / 8 + if chars.len() % 8 == 0 { 0 } else { 1 });
+    let mut res = Vec::with_capacity(chars.len() / 8 + usize::from(chars.len() % 8 != 0));
     for chunk_c in IterChunk::new(chars.as_bytes().iter().rev(), 8) {
         let mut chunk_val = 0u8;
         let chunk_len = chunk_c.len();
@@ -105,7 +102,11 @@ fn from_bin(chars: &str) -> Result<Vec<u8>, BinaryReprError> {
                 if **v == b'1' {
                     chunk_val += 1 << i;
                 } else if **v != b'0' {
-                    return Err(BinaryReprError::new(&chars, BinaryReprFormat::Bin));
+                    return Err(BinaryReprError::new(
+                        chars,
+                        BinaryReprFormat::Bin,
+                        BinaryReprRootError::None,
+                    ));
                 }
             }
         }

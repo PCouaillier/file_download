@@ -32,7 +32,7 @@ impl Handler for FileCollector {
     }
 }
 
-impl<'p> From<FileCollector> for Easy2<FileCollector> {
+impl From<FileCollector> for Easy2<FileCollector> {
     fn from(c: FileCollector) -> Self {
         Self::new(c)
     }

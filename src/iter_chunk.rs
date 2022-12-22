@@ -19,7 +19,7 @@ where
         if size == 0 || size == usize::MAX {
             size
         } else {
-            size / self.size + if size % self.size == 0 { 0 } else { 1 }
+            size / self.size + usize::from(size % self.size == 0)
         }
     }
 }

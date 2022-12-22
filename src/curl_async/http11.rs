@@ -30,7 +30,10 @@ impl<H: Handler + Send + 'static> DlHttp1Future<H> {
                 Err(e) => Err(e.into()),
             }) {
                 Ok(ok) => DlHttp1FutureState::Done(ok),
-                Err(_) => DlHttp1FutureState::Error(ThreadSafeError::from("curl error occured")),
+                Err(err) => DlHttp1FutureState::Error(ThreadSafeError::from(format!(
+                    "curl error occured {}",
+                    err
+                ))),
             };
             *(unlock(&thread_state)) = result;
         }));
@@ -53,7 +56,7 @@ impl<T: Handler> Future for DlHttp1Future<T> {
             DlHttp1FutureState::Pending(_) | DlHttp1FutureState::NotStarted => {
                 let cx2 = cx.waker().clone();
                 *(unlock(&self.waker)) = Some(thread::spawn(move || {
-                    let _ = thread::sleep(Duration::from_secs(1));
+                    thread::sleep(Duration::from_secs(1));
                     cx2.wake();
                 }));
                 Poll::Pending
