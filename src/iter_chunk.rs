@@ -19,7 +19,7 @@ where
         if size == 0 || size == usize::MAX {
             size
         } else {
-            size / self.size + usize::from(size % self.size == 0)
+            size / self.size + usize::from(size % self.size != 0)
         }
     }
 }
@@ -92,8 +92,15 @@ mod test {
 
     #[test]
     fn test_size_hint() {
-        let i = [1, 2, 3, 4, 5].iter().by_chunk(2);
+        let mut i = [1, 2, 3, 4, 5].iter().by_chunk(2);
         assert_eq!((3, Some(3)), i.size_hint());
+        assert!(i.next().is_some());
+        assert_eq!((2, Some(2)), i.size_hint());
+        assert!(i.next().is_some());
+        assert_eq!((1, Some(1)), i.size_hint());
+        assert!(i.next().is_some());
+        assert_eq!((0, Some(0)), i.size_hint());
+        assert!(i.next().is_none());
 
         let i = [1].iter().by_chunk(2);
         assert_eq!((1, Some(1)), i.size_hint());

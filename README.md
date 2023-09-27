@@ -1,5 +1,11 @@
 # File download
 
+## Async runtime
+
+The lib supports eather `async-std` or `tokio` using cargo `features=[...]` option. The default is tokio but **You must set it on your own to prevent changes**
+
+## Usage
+
 File download provides an easy way to download multiple files.
 
 ```
