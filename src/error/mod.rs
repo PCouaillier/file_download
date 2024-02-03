@@ -12,8 +12,15 @@ use std::{
 use tokio::io;
 
 #[derive(Debug)]
+pub struct BadCheckSumErrorDetail {
+    pub url: String,
+    pub expected_hash: String,
+    pub current_hash: String,
+}
+
+#[derive(Debug)]
 pub struct BadCheckSumError {
-    pub file_sources: Vec<(String, String)>,
+    pub file_sources: Vec<BadCheckSumErrorDetail>,
 }
 impl Display for BadCheckSumError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -22,8 +29,8 @@ impl Display for BadCheckSumError {
 }
 impl Error for BadCheckSumError {}
 
-impl From<Vec<(String, String)>> for BadCheckSumError {
-    fn from(file_sources: Vec<(String, String)>) -> Self {
+impl From<Vec<BadCheckSumErrorDetail>> for BadCheckSumError {
+    fn from(file_sources: Vec<BadCheckSumErrorDetail>) -> Self {
         Self { file_sources }
     }
 }

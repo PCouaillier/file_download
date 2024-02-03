@@ -56,7 +56,7 @@ async fn download_files_http11_curl(chunk: Vec<FileToDl>) -> Result<(), DlError>
 
 enum CheckHashAndRenameError {
     IoError(io::Error),
-    HashError((String, String)),
+    HashError(BadCheckSumErrorDetail),
 }
 
 async fn check_hash_and_rename(
@@ -112,7 +112,7 @@ async fn download_files_http11(files: &[FileToDl]) -> Result<(), DlError> {
             .map(check_hash_and_rename),
     )
     .await;
-    let mut bad_check: Vec<(String, String)> = Vec::new();
+    let mut bad_check: Vec<BadCheckSumErrorDetail> = Vec::new();
     for result in results
         .into_iter()
         .filter(Result::is_err)
@@ -156,7 +156,7 @@ async fn download_files_http2(files: &[FileToDl]) -> Result<(), DlError> {
     )
     .await;
 
-    let mut bad_check: Vec<(String, String)> = Vec::new();
+    let mut bad_check: Vec<BadCheckSumErrorDetail> = Vec::new();
     for result in results
         .into_iter()
         .filter(Result::is_err)
@@ -216,7 +216,7 @@ fn download_file_http11(file: &FileToDl) -> Result<Easy2<FileCollector>, curl::E
     Ok(easy)
 }
 
-async fn check_file_checksum(file: &FileToDl) -> Result<(), (String, String)> {
+async fn check_file_checksum(file: &FileToDl) -> Result<(), BadCheckSumErrorDetail> {
     let target = PathBuf::from(file.target.as_os_str());
     if !file_exists(&target).await || file.check_sum == CheckSum::None {
         return Ok(());
@@ -228,7 +228,11 @@ async fn check_file_checksum(file: &FileToDl) -> Result<(), (String, String)> {
     if let Ok(content) = fs::read(&target).await {
         let digest = BASE64_ENGINE.encode(*md5::compute(content));
         if f_md5 != digest {
-            return Err((file.source.clone(), f_md5));
+            return Err(BadCheckSumErrorDetail {
+                url: file.source.clone(),
+                expected_hash: f_md5,
+                current_hash: digest,
+            });
         }
     }
     Ok(())
