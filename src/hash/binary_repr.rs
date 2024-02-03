@@ -1,6 +1,9 @@
 use super::BinaryReprFormat;
 use crate::error::*;
 use crate::IterChunk;
+use base64::engine::general_purpose::{GeneralPurpose, STANDARD};
+use base64::Engine as _;
+pub const BASE64_ENGINE: GeneralPurpose = STANDARD;
 
 #[derive(Debug, Clone)]
 pub struct BinaryRepr {
@@ -19,7 +22,7 @@ impl BinaryRepr {
     /// ```
     pub fn new(value: &str, format: BinaryReprFormat) -> Result<Self, BinaryReprError> {
         match &format {
-            BinaryReprFormat::Base64 => base64::decode(value)
+            BinaryReprFormat::Base64 => BASE64_ENGINE.decode(value)
                 .map_err(|err| BinaryReprError::new(value, BinaryReprFormat::Base64, err.into())),
             BinaryReprFormat::Hex => hex::decode(value)
                 .map_err(|err| BinaryReprError::new(value, BinaryReprFormat::Hex, err.into())),
@@ -47,7 +50,7 @@ impl BinaryRepr {
     /// assert_eq!(b.to_base64(), v);
     /// ```
     pub fn to_base64(&self) -> String {
-        base64::encode(self.value.as_slice())
+        BASE64_ENGINE.encode(&self.value)
     }
 
     /// ```

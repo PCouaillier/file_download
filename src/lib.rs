@@ -8,7 +8,9 @@ pub mod iter_chunk;
 use crate::curl_async::{DlHttp1Future, DlHttp2Future};
 use crate::error::*;
 use crate::handler::FileCollector;
-use crate::hash::{BinaryRepr, BinaryReprFormat};
+use crate::hash::{BinaryRepr, BinaryReprFormat, BASE64_ENGINE};
+use base64::Engine as _;
+
 #[cfg(feature = "async-std")]
 use async_std::{
     fs, io,
@@ -224,7 +226,7 @@ async fn check_file_checksum(file: &FileToDl) -> Result<(), (String, String)> {
         CheckSum::Md5(f_md5) => f_md5.to_base64(),
     };
     if let Ok(content) = fs::read(&target).await {
-        let digest = base64::encode(*md5::compute(content));
+        let digest = BASE64_ENGINE.encode(*md5::compute(content));
         if f_md5 != digest {
             return Err((file.source.clone(), f_md5));
         }
