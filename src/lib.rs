@@ -44,7 +44,8 @@ async fn md5_hash_check_file(expected_hash: &BinaryRepr, file_path: &Path) -> Re
         // Add chunk to the md5
         context.consume(part);
         // Tell the buffer that the chunk is consumed
-        std::pin::Pin::new(&mut buf).consume(part.len());
+        let part_len = part.len();
+        std::pin::Pin::new(&mut buf).consume(part_len);
     }
     let digest_b64 = BASE64_ENGINE.encode(context.compute().as_ref());
     let expected_hash_b64 = expected_hash.to_base64();
