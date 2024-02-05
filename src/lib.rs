@@ -16,17 +16,23 @@ use async_std::{
     fs, io,
     path::{Path, PathBuf},
 };
-#[cfg(feature = "async-std")]
-use futures::{AsyncBufRead, io::AsyncBufReadExt};
 use curl::easy::{Easy2, HttpVersion};
 use futures::future::{join_all, try_join_all};
+#[cfg(feature = "async-std")]
+use futures::{io::AsyncBufReadExt, AsyncBufRead};
 use iter_chunk::*;
 #[cfg(all(not(feature = "async-std"), feature = "tokio"))]
 use std::path::{Path, PathBuf};
 #[cfg(all(not(feature = "async-std"), feature = "tokio"))]
-use tokio::{fs, io::{self, AsyncBufReadExt}};
+use tokio::{
+    fs,
+    io::{self, AsyncBufReadExt},
+};
 
-async fn md5_hash_check_file(expected_hash: &BinaryRepr, file_path: &Path) -> Result<(), CheckHashError> {
+async fn md5_hash_check_file(
+    expected_hash: &BinaryRepr,
+    file_path: &Path,
+) -> Result<(), CheckHashError> {
     let f = fs::File::open(file_path).await?;
     // Find the length of the file
     let len = f.metadata().await?.len();
@@ -56,7 +62,7 @@ async fn md5_hash_check_file(expected_hash: &BinaryRepr, file_path: &Path) -> Re
         url: file_path.to_string_lossy().to_string(),
         expected_hash: expected_hash_b64,
         current_hash: digest_b64,
-    }))
+    }));
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -98,9 +104,7 @@ async fn download_files_http11_curl(chunk: Vec<FileToDl>) -> Result<(), DlError>
     Ok(())
 }
 
-async fn check_hash_and_rename(
-    files: (&FileToDl, &FileToDl),
-) -> Result<(), CheckHashError> {
+async fn check_hash_and_rename(files: (&FileToDl, &FileToDl)) -> Result<(), CheckHashError> {
     let (tmp_file, file) = files;
     if let Err(err) = check_file_checksum(tmp_file).await {
         Err(err)
@@ -260,7 +264,19 @@ async fn check_file_checksum(file: &FileToDl) -> Result<(), CheckHashError> {
     if !file_exists(&target).await {
         return Ok(());
     }
-    file.check_sum.do_file_matches_checksum(&target).await
+    file.check_sum
+        .do_file_matches_checksum(&target)
+        .await
+        .map_err(|err| match err {
+            CheckHashError::IoError(_) => err,
+            CheckHashError::HashError(detail) => {
+                CheckHashError::HashError(BadCheckSumErrorDetail {
+                    url: file.source.clone(),
+                    expected_hash: detail.expected_hash,
+                    current_hash: detail.current_hash,
+                })
+            }
+        })
 }
 
 #[derive(Default)]

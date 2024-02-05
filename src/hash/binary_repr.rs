@@ -22,7 +22,8 @@ impl BinaryRepr {
     /// ```
     pub fn new(value: &str, format: BinaryReprFormat) -> Result<Self, BinaryReprError> {
         match &format {
-            BinaryReprFormat::Base64 => BASE64_ENGINE.decode(value)
+            BinaryReprFormat::Base64 => BASE64_ENGINE
+                .decode(value)
                 .map_err(|err| BinaryReprError::new(value, BinaryReprFormat::Base64, err.into())),
             BinaryReprFormat::Hex => hex::decode(value)
                 .map_err(|err| BinaryReprError::new(value, BinaryReprFormat::Hex, err.into())),
