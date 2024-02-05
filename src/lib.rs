@@ -16,18 +16,61 @@ use async_std::{
     fs, io,
     path::{Path, PathBuf},
 };
+#[cfg(feature = "async-std")]
+use futures::{AsyncBufRead, io::AsyncBufReadExt};
 use curl::easy::{Easy2, HttpVersion};
 use futures::future::{join_all, try_join_all};
 use iter_chunk::*;
 #[cfg(all(not(feature = "async-std"), feature = "tokio"))]
 use std::path::{Path, PathBuf};
 #[cfg(all(not(feature = "async-std"), feature = "tokio"))]
-use tokio::{fs, io};
+use tokio::{fs, io::{self, AsyncBufReadExt}};
+
+async fn md5_hash_check_file(expected_hash: &BinaryRepr, file_path: &Path) -> Result<(), CheckHashError> {
+    let f = fs::File::open(file_path).await?;
+    // Find the length of the file
+    let len = f.metadata().await?.len();
+    // Decide on a reasonable buffer size (1MB in this case, fastest will depend on hardware)
+    let buf_len = len.min(1_000_000) as usize;
+    let mut buf = io::BufReader::with_capacity(buf_len, f);
+    let mut context = md5::Context::new();
+    loop {
+        // Get a chunk of the file
+        let part = buf.fill_buf().await?;
+        // If that chunk was empty, the reader has reached EOF
+        if part.is_empty() {
+            break;
+        }
+        // Add chunk to the md5
+        context.consume(part);
+        // Tell the buffer that the chunk is consumed
+        std::pin::Pin::new(&mut buf).consume(part.len());
+    }
+    let digest_b64 = BASE64_ENGINE.encode(context.compute().as_ref());
+    let expected_hash_b64 = expected_hash.to_base64();
+    if digest_b64 == expected_hash_b64 {
+        return Ok(());
+    }
+    return Err(CheckHashError::HashError(BadCheckSumErrorDetail {
+        url: file_path.to_string_lossy().to_string(),
+        expected_hash: expected_hash_b64,
+        current_hash: digest_b64,
+    }))
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CheckSum {
     None,
     Md5(BinaryRepr),
+}
+
+impl CheckSum {
+    pub async fn do_file_matches_checksum(&self, file_path: &Path) -> Result<(), CheckHashError> {
+        match self {
+            Self::None => Ok(()),
+            Self::Md5(expected_hash) => md5_hash_check_file(expected_hash, file_path).await,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -54,21 +97,16 @@ async fn download_files_http11_curl(chunk: Vec<FileToDl>) -> Result<(), DlError>
     Ok(())
 }
 
-enum CheckHashAndRenameError {
-    IoError(io::Error),
-    HashError(BadCheckSumErrorDetail),
-}
-
 async fn check_hash_and_rename(
     files: (&FileToDl, &FileToDl),
-) -> Result<(), CheckHashAndRenameError> {
+) -> Result<(), CheckHashError> {
     let (tmp_file, file) = files;
     if let Err(err) = check_file_checksum(tmp_file).await {
-        Err(CheckHashAndRenameError::HashError(err))
+        Err(err)
     } else {
         fs::rename(&tmp_file.target, &file.target)
             .await
-            .map_err(CheckHashAndRenameError::IoError)
+            .map_err(CheckHashError::IoError)
     }
 }
 
@@ -119,8 +157,8 @@ async fn download_files_http11(files: &[FileToDl]) -> Result<(), DlError> {
         .map(Result::unwrap_err)
     {
         match result {
-            CheckHashAndRenameError::IoError(err) => return Err(DlError::from(err)),
-            CheckHashAndRenameError::HashError(err) => bad_check.push(err),
+            CheckHashError::IoError(err) => return Err(DlError::from(err)),
+            CheckHashError::HashError(err) => bad_check.push(err),
         }
     }
     if !bad_check.is_empty() {
@@ -163,8 +201,8 @@ async fn download_files_http2(files: &[FileToDl]) -> Result<(), DlError> {
         .map(Result::unwrap_err)
     {
         match result {
-            CheckHashAndRenameError::IoError(err) => return Err(DlError::from(err)),
-            CheckHashAndRenameError::HashError(err) => bad_check.push(err),
+            CheckHashError::IoError(err) => return Err(DlError::from(err)),
+            CheckHashError::HashError(err) => bad_check.push(err),
         }
     }
     if !bad_check.is_empty() {
@@ -216,26 +254,12 @@ fn download_file_http11(file: &FileToDl) -> Result<Easy2<FileCollector>, curl::E
     Ok(easy)
 }
 
-async fn check_file_checksum(file: &FileToDl) -> Result<(), BadCheckSumErrorDetail> {
+async fn check_file_checksum(file: &FileToDl) -> Result<(), CheckHashError> {
     let target = PathBuf::from(file.target.as_os_str());
-    if !file_exists(&target).await || file.check_sum == CheckSum::None {
+    if !file_exists(&target).await {
         return Ok(());
     }
-    let f_md5 = match &file.check_sum {
-        CheckSum::None => return Ok(()),
-        CheckSum::Md5(f_md5) => f_md5.to_base64(),
-    };
-    if let Ok(content) = fs::read(&target).await {
-        let digest = BASE64_ENGINE.encode(*md5::compute(content));
-        if f_md5 != digest {
-            return Err(BadCheckSumErrorDetail {
-                url: file.source.clone(),
-                expected_hash: f_md5,
-                current_hash: digest,
-            });
-        }
-    }
-    Ok(())
+    file.check_sum.do_file_matches_checksum(&target).await
 }
 
 #[derive(Default)]

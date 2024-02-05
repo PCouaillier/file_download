@@ -208,3 +208,23 @@ impl BinaryReprError {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum CheckHashError {
+    IoError(std::io::Error),
+    HashError(BadCheckSumErrorDetail),
+}
+
+impl From<std::io::Error> for CheckHashError {
+    fn from(from: std::io::Error) -> Self {
+        Self::IoError(from)
+    }
+}
+
+impl std::fmt::Display for CheckHashError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
+impl Error for CheckHashError {}
