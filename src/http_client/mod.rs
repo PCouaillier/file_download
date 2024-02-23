@@ -1,3 +1,6 @@
+#[cfg(feature = "hyper")]
+mod hyper;
+
 use crate::curl_async::{DlHttp1Future, DlHttp2Future};
 use crate::error::*;
 use crate::handler::FileCollector;
