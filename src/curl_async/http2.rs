@@ -40,7 +40,7 @@ impl<'files, T: Handler> DlHttp2FutureInner<'files, T> {
                 mem::swap(&mut files, &mut self.files);
                 self.state = DlHttp2FutureState::Done(files.unwrap());
                 let mut multi = None;
-                std::mem::swap(&mut self.multi, &mut multi);
+                mem::swap(&mut self.multi, &mut multi);
                 drop(multi);
                 return;
             }
@@ -51,13 +51,13 @@ impl<'files, T: Handler> DlHttp2FutureInner<'files, T> {
                         mem::swap(&mut files, &mut self.files);
                         self.state = DlHttp2FutureState::Done(files.unwrap());
                         let mut multi = None;
-                        std::mem::swap(&mut self.multi, &mut multi);
+                        mem::swap(&mut self.multi, &mut multi);
                         drop(multi);
                     }
                     Err(error) => {
                         self.state = DlHttp2FutureState::Error(Arc::new(error.into()));
                         let mut multi = None;
-                        std::mem::swap(&mut self.multi, &mut multi);
+                        mem::swap(&mut self.multi, &mut multi);
                         drop(multi);
                     }
                     _ => {}
