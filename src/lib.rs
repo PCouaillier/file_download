@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-pub(crate) mod curl_async;
+pub mod curl_async;
 pub mod error;
 pub mod handler;
 pub mod hash;
