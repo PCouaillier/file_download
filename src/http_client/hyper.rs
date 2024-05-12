@@ -1,28 +1,23 @@
+use http_body_util::{BodyExt, Empty};
 use hyper::body::Bytes;
 use hyper::{Request, Uri};
 use hyper_util::rt::TokioIo;
-use http_body_util::{BodyExt, Empty};
 use tokio::io::AsyncWriteExt as _;
 
 #[cfg(feature = "async-std")]
 use async_std::{
-    path::Path,
     io::{BufWriter, File},
     net::TcpStream,
-    prelude::*
-};
-#[cfg(all(not(feature = "async-std"), feature = "tokio"))]
-use tokio::{
-    fs::File,
-    io::BufWriter,
-    net::TcpStream,
+    path::Path,
+    prelude::*,
 };
 #[cfg(all(not(feature = "async-std"), feature = "tokio"))]
 use std::path::Path;
+#[cfg(all(not(feature = "async-std"), feature = "tokio"))]
+use tokio::{fs::File, io::BufWriter, net::TcpStream};
 
 // A simple type alias so as to DRY.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
 
 pub(crate) async fn download_http1(url: &str, target_path: &Path) -> Result<()> {
     let uri = Uri::try_from(url)?;
@@ -50,7 +45,7 @@ pub(crate) async fn download_http1(url: &str, target_path: &Path) -> Result<()> 
     // Stream the body, writing each chunk to stdout as we get it
     // (instead of buffering and printing at the end).
     let mut file = BufWriter::new(File::open(target_path).await?);
-    
+
     while let Some(next) = res.frame().await {
         let frame = next?;
         if let Some(chunk) = frame.data_ref() {

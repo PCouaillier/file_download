@@ -72,22 +72,22 @@ mod test {
         let mut i = (1..6).by_chunk(2);
         for _ in 0..2 {
             let v = i.next();
-            assert_eq!(true, v.is_some());
+            assert!(v.is_some());
             let v = v.unwrap();
             assert_eq!(2, v.len());
         }
         let v = i.next();
-        assert_eq!(true, v.is_some());
+        assert!(v.is_some());
         let v = v.unwrap();
         assert_eq!(1, v.len());
-        assert_eq!(true, i.next().is_none());
+        assert!(i.next().is_none());
     }
 
     #[test]
     fn test_empty_iter() {
         let v = Vec::<usize>::default();
         let mut i = v.iter().by_chunk(2);
-        assert_eq!(true, i.next().is_none());
+        assert!(i.next().is_none());
     }
 
     #[test]

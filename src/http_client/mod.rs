@@ -194,9 +194,9 @@ pub async fn download_files_http11(files: &[FileToDl]) -> Result<(), DlError> {
     Ok(())
 }
 
-async fn download_files_http2_curl(files: &Vec<FileToDl>) -> Result<(), DlError> {
+async fn download_files_http2_curl(files: &[FileToDl]) -> Result<(), DlError> {
     let mut dl_tokens = Vec::with_capacity(files.len());
-    let multi = curl::multi::Multi::new();
+    let multi: curl::multi::Multi = curl::multi::Multi::new();
     for file in files.iter() {
         dl_tokens.push(multi.add2(download_file_http2_curl(file)?)?);
     }

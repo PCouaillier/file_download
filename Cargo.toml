@@ -1,6 +1,6 @@
 [package]
 name = "file_download"
-version = "1.0.0"
+version = "2.0.0"
 authors = ["pcouaillier <paul.couaillier@laposte.net>"]
 edition = "2021"
 
@@ -15,7 +15,7 @@ hyper = ["tokio", "tokio/full", "tokio/rt", "tokio/net", "dep:hyper", "dep:hyper
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["async-await", "std"] }
-base64 = "~0.21.7"
+base64 = "~0.22.1"
 hex = "0.4.2"
 md5 = "~0.7"
 chrono = ">=0.4"

@@ -46,7 +46,7 @@ impl<'files, T: Handler> DlHttp2FutureInner<'files, T> {
             }
             if let Some(multi) = &mut self.multi {
                 match multi.perform() {
-                    Ok(bytes) if bytes == 0 => {
+                    Ok(0) => {
                         let mut files = None;
                         mem::swap(&mut files, &mut self.files);
                         self.state = DlHttp2FutureState::Done(files.unwrap());
