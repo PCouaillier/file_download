@@ -24,6 +24,7 @@ impl Handler for FileCollector {
         let file = self.file.get_or_insert_with(|| {
             fs::OpenOptions::new()
                 .create(true)
+                .truncate(true)
                 .write(true)
                 .open(path)
                 .expect("file created")
