@@ -8,42 +8,71 @@ use std::{
     task::{Context, Poll},
 };
 
+pub type Easy2Builder<H> = Box<dyn Send + 'static + FnOnce() -> Result<Easy2<H>, CurlError>>;
+
 enum DlHttp1FutureState<H: Handler> {
+    NotStarted(Easy2Builder<H>),
     Pending(std::thread::JoinHandle<Result<Easy2<H>, ThreadSafeError>>),
     Done,
 }
 
-pub struct DlHttp1Future<T: Handler> {
-    state: DlHttp1FutureState<T>,
+pub struct DlHttp1Future<H: Handler> {
+    state: DlHttp1FutureState<H>,
     waker: Option<std::thread::JoinHandle<()>>,
 }
 
 impl<H: Handler + Send + 'static> DlHttp1Future<H> {
-    pub fn new<F: Send + 'static + FnOnce() -> Result<Easy2<H>, CurlError>>(f: F) -> Self {
-        let state = DlHttp1FutureState::Pending(std::thread::spawn(move || {
-            f().and_then(|easy| match easy.perform() {
-                Ok(_) => Ok(easy),
-                Err(e) => Err(e.into()),
-            })
-            .map_err(|err| ThreadSafeError::from(format!("curl error occured {}", err)))
-        }));
-        Self { state, waker: None }
+    pub fn new<F: Send + 'static + FnOnce() -> Result<Easy2<H>, CurlError>>(
+        easy_builder: F,
+    ) -> Self {
+        Self {
+            state: DlHttp1FutureState::NotStarted(Box::new(easy_builder)),
+            waker: None,
+        }
     }
 }
 
-impl<T: Handler> Future for DlHttp1Future<T> {
-    type Output = Result<Easy2<T>, CurlError>;
+impl<H: Handler + Send + 'static> Future for DlHttp1Future<H> {
+    type Output = Result<Easy2<H>, CurlError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let self_m = self.get_mut();
 
+        if matches!(&self_m.state, DlHttp1FutureState::NotStarted(_)) {
+            // I need to take ownership of easy_builder so i temporarly put the Done state...
+            let mut state = DlHttp1FutureState::Done;
+            std::mem::swap(&mut self_m.state, &mut state);
+
+            // This may lead to a panic if poll is called now
+
+            if let DlHttp1FutureState::NotStarted(easy_builder) = state {
+                let cx2 = cx.waker().clone();
+                let mut state = DlHttp1FutureState::Pending(std::thread::spawn(move || {
+                    easy_builder()
+                        .and_then(|easy| match easy.perform() {
+                            Ok(_) => Ok(easy),
+                            Err(e) => Err(e.into()),
+                        })
+                        .map_err(|err| ThreadSafeError::from(format!("curl error occured {}", err)))
+                        .map(move |easy| {
+                            cx2.wake();
+                            easy
+                        })
+                }));
+                std::mem::swap(&mut self_m.state, &mut state);
+                // We are back in a valid state
+                return Poll::Pending;
+            } else {
+                panic!("bad state")
+            }
+        }
+
         let is_pending = match &self_m.state {
             DlHttp1FutureState::Pending(thread) => !thread.is_finished(),
-            DlHttp1FutureState::Done => {
-                return Poll::Ready(Err(ThreadSafeError::from("Value is gone").into()))
-            }
+            _ => panic!("bad state"),
         };
         if is_pending {
+            // this branch is only if the promise is waken before thread is properly marked finished
             let cx2 = cx.waker().clone();
             let mut tmp = Some(thread::spawn(move || {
                 thread::sleep(Duration::from_secs(1));
@@ -55,12 +84,11 @@ impl<T: Handler> Future for DlHttp1Future<T> {
             let mut done = DlHttp1FutureState::Done;
             std::mem::swap(&mut self_m.state, &mut done);
             match done {
+                // this branch calls thread.join() wich is non-blocking on completed threads
                 DlHttp1FutureState::Pending(thread) => {
                     Poll::Ready(thread.join().expect("join").map_err(CurlError::from))
                 }
-                DlHttp1FutureState::Done => {
-                    Poll::Ready(Err(ThreadSafeError::from("Value is gone").into()))
-                }
+                _ => panic!("bad state"),
             }
         }
     }
