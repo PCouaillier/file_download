@@ -27,3 +27,8 @@ impl AsRef<[u8]> for BinaryCollector {
         self.0.as_ref()
     }
 }
+impl std::fmt::Debug for BinaryCollector {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(fmt, "BinaryCollector([u8; {}])", self.0.len())
+    }
+}
