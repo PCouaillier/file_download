@@ -15,7 +15,17 @@ enum DlHttp1FutureState<H: Handler> {
     Pending(std::thread::JoinHandle<Result<Easy2<H>, ThreadSafeError>>),
     Done,
 }
+impl <H: Handler> std::fmt::Debug for DlHttp1FutureState<H> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(fmt, "DlHttp1FutureState({})", match self {
+            Self::NotStarted(_) => "NotStarted",
+            Self::Pending(_) => "Pending",
+            Self::Done => "Done",
+        })
+    }
+}
 
+#[derive(Debug)]
 pub struct DlHttp1Future<H: Handler> {
     state: DlHttp1FutureState<H>,
     waker: Option<std::thread::JoinHandle<()>>,
@@ -32,9 +42,10 @@ impl<H: Handler + Send + 'static> DlHttp1Future<H> {
     }
 }
 
-impl<H: Handler + Send + 'static> Future for DlHttp1Future<H> {
+impl<H: Handler + Send + 'static + std::fmt::Debug> Future for DlHttp1Future<H> {
     type Output = Result<Easy2<H>, CurlError>;
 
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "debug"))]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let self_m = self.get_mut();
 

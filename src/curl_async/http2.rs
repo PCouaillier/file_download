@@ -14,7 +14,7 @@ use std::{
 };
 
 #[derive(Debug)]
-enum DlHttp2FutureState<'files, T: Handler> {
+enum DlHttp2FutureState<'files, T: Handler + std::fmt::Debug> {
     Pending,
     Done(&'files [Easy2Handle<T>]),
     Error(Arc<CurlError>),
@@ -24,14 +24,16 @@ enum DlHttp2FutureState<'files, T: Handler> {
 /// wole
 ///
 ///
-struct DlHttp2FutureInner<'files, T: Handler> {
+#[derive(Debug)]
+struct DlHttp2FutureInner<'files, T: Handler + std::fmt::Debug> {
     pub files: Option<&'files [Easy2Handle<T>]>,
     pub multi: Option<curl::multi::Multi>,
     pub state: DlHttp2FutureState<'files, T>,
     pub join: Option<std::thread::JoinHandle<()>>,
 }
 
-impl<'files, T: Handler> DlHttp2FutureInner<'files, T> {
+impl<'files, T: Handler + std::fmt::Debug> DlHttp2FutureInner<'files, T> {
+    #[cfg_attr(feature = "tracing", tracing::instrument)]
     fn poll_multi(&mut self) {
         if let DlHttp2FutureState::Pending = self.state {
             if self.files.map(|a| a.is_empty()).unwrap_or(true) {
@@ -84,7 +86,7 @@ impl<'files, T: Handler> DlHttp2FutureInner<'files, T> {
     }
 }
 
-pub struct DlHttp2Future<'files, T: Handler> {
+pub struct DlHttp2Future<'files, T: Handler + std::fmt::Debug> {
     inner: DlHttp2FutureInner<'files, T>,
 }
 
@@ -100,7 +102,7 @@ impl<'files, T: Handler + Debug> std::fmt::Debug for DlHttp2Future<'files, T> {
     }
 }
 
-impl<'files, T: Handler> DlHttp2Future<'files, T> {
+impl<'files, T: Handler + std::fmt::Debug> DlHttp2Future<'files, T> {
     pub fn new(files: &'files [Easy2Handle<T>], multi: Multi) -> Self {
         if files.is_empty() {
             drop(multi);
@@ -125,7 +127,7 @@ impl<'files, T: Handler> DlHttp2Future<'files, T> {
     }
 }
 
-impl<'files, T: Handler> Future for DlHttp2Future<'files, T> {
+impl<'files, T: Handler + std::fmt::Debug> Future for DlHttp2Future<'files, T> {
     type Output = Result<&'files [Easy2Handle<T>], Arc<CurlError>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {

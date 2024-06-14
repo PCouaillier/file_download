@@ -11,6 +11,7 @@ default = ["tokio"]
 curl-static = ["curl/static-curl", "curl/static-ssl"]
 async-std = ["dep:async-std"]
 tokio = ["dep:tokio"]
+tracing = ["dep:tracing"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["async-await", "std"] }
@@ -21,3 +22,4 @@ chrono = ">=0.4"
 curl = { version = "~0.4", features = ["http2"] }
 async-std = { version = "^1.12", optional = true }
 tokio = { version = "^1.1", optional = true, features = ["io-std", "io-util", "fs"] }
+tracing = { version = "^0.1.40", optional = true }
